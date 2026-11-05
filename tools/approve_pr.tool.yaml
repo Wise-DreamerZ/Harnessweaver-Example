@@ -1,0 +1,19 @@
+# approve_pr: the bot may propose an approval, never grant one alone. Every call
+# waits for a maintainer (approval.when is always true), and the run resumes
+# where it stopped once they answer.
+apiVersion: harnessweaver/v1
+kind: Tool
+metadata: {name: approve_pr, version: 1.0.0, owner: dev-productivity}
+spec:
+  transport: native
+  handler: "reviewbot.tools:approve_pr"
+  description: Approve a pull request that is correct, safe and complete.
+  input_schema:
+    type: object
+    properties:
+      number: {type: integer, minimum: 1, description: "The pull request's number."}
+    required: [number]
+  definition_digest: sha256:02f0c74ada03f66e2399e321395ee7905f461574fc5cda4fd04332d673bafba1
+  side_effect: write_external
+  risk: high
+  approval: {when: "true", approver_role: maintainer}

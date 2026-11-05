@@ -1,0 +1,80 @@
+# pr-review-bot: reviews pull requests and asks a maintainer before approving one.
+#
+# Pull requests are written by their authors, sometimes outsiders, so everything
+# in them is untrusted. The model reads the change and writes the review; this
+# spec decides what the bot may do along the way. The app's code is one call:
+# harness.run("review", request).
+apiVersion: harnessweaver/v1
+kind: Harness
+metadata:
+  name: pr-review-bot
+  owner: dev-productivity
+  risk_tier: takes_actions
+  description: Reviews pull requests, and asks a maintainer before approving one.
+
+# profile://agent: injection checks on the input (agent-injection), secrets
+# redacted from tool results (agent-tool-secrets), secrets blocked in the output
+# (agent-secrets), a manifest for every tool, capped tool calls.
+extends: ["profile://agent"]
+
+plugins:
+  local: ["reviewbot.plugin"]        # reviewbot.protected_paths, in this repo
+
+models:
+  provider: anthropic.messages
+  api_key_env: ANTHROPIC_API_KEY
+  effort: high                       # code review rewards thinking it through
+  default: reviewer
+  aliases: { reviewer: claude-opus-5-5 }
+  prices:
+    claude-opus-5-5: { input_per_mtok: 4.0, output_per_mtok: 20.0 }
+
+guardrails:
+  tool_result:
+    # The diff is the attacker's best channel: check it the way the profile checks
+    # the input. Cheap and easy to evade, which PR 106 shows; the trifecta check
+    # below is what stops an injection this guard misses.
+    - { id: diff-injection, use: injection.heuristic, action: block }
+
+middleware:
+  - { use: reviewbot.protected_paths, band: app }
+
+tools:
+  manifests: ["tools/*.tool.yaml"]
+  trifecta: block                    # untrusted diff + private repo + egress: nothing goes out (S3)
+
+# Deterministic rules every tool call passes (R3).
+policy:
+  rules:
+    - id: no-approvals-for-outsiders
+      when: "tool.name == 'approve_pr' && principal.roles.exists(r, r == 'external')"
+      effect: deny
+      reason: a review an external contributor triggered never approves
+
+approvals: { approver_role: maintainer, timeout: 72h, on_timeout: reject }
+
+# Business rules on the typed Review. True means the review breaks the rule, and
+# the model is asked once to fix it.
+validation:
+  max_repairs: 1
+  rules:
+    - id: no-approve-with-blockers
+      when: "output.verdict == 'approve' && output.findings.exists(f, f.severity == 'major' || f.severity == 'critical')"
+      message: "a review with a major or critical finding can't approve; use request_changes"
+    - id: changes-need-findings
+      when: "output.verdict == 'request_changes' && size(output.findings) == 0"
+      message: "request_changes needs at least one finding that says what to change"
+
+tasks:
+  review:
+    version: 1.0.0
+    description: Review one pull request.
+    runner: direct
+    input: "reviewbot.models:ReviewRequest"
+    output: "reviewbot.models:Review"
+    prompt: review@1
+    tools: [get_diff, read_file, post_comment, approve_pr]    # never merge_pr
+    budget: { max_model_calls: 6, max_tool_calls: 8, max_usd: 0.50, deadline: 2m }
+
+evals:
+  review: [evals/golden.yaml, evals/redteam.yaml]

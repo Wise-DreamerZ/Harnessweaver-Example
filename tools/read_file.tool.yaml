@@ -1,0 +1,25 @@
+# read_file: reads the private repository's base branch. HarnessWeaver counts any
+# data_access entry starting with "pii" as private data, so once this runs the
+# run holds private data, and with untrusted diff text already in it, no tool
+# with egress may run (tools.trifecta: block).
+apiVersion: harnessweaver/v1
+kind: Tool
+metadata: {name: read_file, version: 1.0.0, owner: dev-productivity}
+spec:
+  transport: native
+  handler: "reviewbot.tools:read_file"
+  description: Read a file from the repository's base branch, for context around a change.
+  input_schema:
+    type: object
+    properties:
+      path:
+        type: string
+        pattern: "^[A-Za-z0-9_][A-Za-z0-9_./-]*$"
+        maxLength: 200
+        description: "A path relative to the repository root, such as src/db/users.py."
+    required: [path]
+  definition_digest: sha256:bb54b052384205bd102f439c4a01fe0e5855a3e5f1158ddb8fa80d9011fdf048
+  side_effect: read
+  risk: low
+  data_access: ["pii:internal-repo"]
+  output: {label: trusted}          # the base branch is reviewed code

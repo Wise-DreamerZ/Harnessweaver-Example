@@ -1,0 +1,18 @@
+# get_diff: reads a pull request's diff. The PR's author wrote every line of it,
+# so its output is untrusted (S3): it can't steer the bot's other tool calls.
+apiVersion: harnessweaver/v1
+kind: Tool
+metadata: {name: get_diff, version: 1.0.0, owner: dev-productivity}
+spec:
+  transport: native
+  handler: "reviewbot.tools:get_diff"
+  description: Read a pull request's changed files and unified diff.
+  input_schema:
+    type: object
+    properties:
+      number: {type: integer, minimum: 1, description: "The pull request's number."}
+    required: [number]
+  definition_digest: sha256:965913e84aec29c240ea0e95b82fe6506911baa4b16a2d409330b29e98bc9069
+  side_effect: read
+  risk: low
+  output: {label: untrusted}

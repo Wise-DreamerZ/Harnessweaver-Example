@@ -1,0 +1,20 @@
+# post_comment: writes text to GitHub, where the PR's author (maybe an outsider)
+# can read it. That is egress: the third leg of the lethal trifecta.
+apiVersion: harnessweaver/v1
+kind: Tool
+metadata: {name: post_comment, version: 1.0.0, owner: dev-productivity}
+spec:
+  transport: native
+  handler: "reviewbot.tools:post_comment"
+  description: Post a comment on a pull request, to point the author at a specific line.
+  input_schema:
+    type: object
+    properties:
+      number: {type: integer, minimum: 1, description: "The pull request's number."}
+      body: {type: string, minLength: 1, maxLength: 4000}
+    required: [number, body]
+  definition_digest: sha256:8aabcc7b909324e787cefe6dbd97b0e7c609a6afa0cb4e12288f49217053a0f0
+  side_effect: write_external
+  risk: low
+  egress: [api.github.com]
+  rate_limit: {per_principal: 20/h}

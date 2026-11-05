@@ -1,0 +1,18 @@
+# merge_pr: registered so the harness knows it, but tasks.review doesn't offer it.
+# A model talked into merging is blocked with tool_not_offered.
+apiVersion: harnessweaver/v1
+kind: Tool
+metadata: {name: merge_pr, version: 1.0.0, owner: dev-productivity}
+spec:
+  transport: native
+  handler: "reviewbot.tools:merge_pr"
+  description: Merge a pull request into its base branch.
+  input_schema:
+    type: object
+    properties:
+      number: {type: integer, minimum: 1, description: "The pull request's number."}
+    required: [number]
+  definition_digest: sha256:c794507acc90c70fb6c06a61194536ec309d54c5a33205bfdf54cdb5c7da0076
+  side_effect: destructive
+  risk: critical
+  approval: {when: "true", approver_role: maintainer}
