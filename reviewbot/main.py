@@ -39,6 +39,11 @@ With Claude, that is the Anthropic SDK finding no credentials. In the shell
 you run the demo from, set ANTHROPIC_API_KEY (or run `ant auth login`), then
 try again. Don't type the key into a chat with an assistant."""
 
+KEY_REJECTED = """The model provider rejected the credentials (HTTP 401). Check
+ANTHROPIC_API_KEY in the shell you run the demo from: it may still be a
+placeholder, be revoked, or carry stray quotes or spaces. Don't type the key
+into a chat with an assistant."""
+
 
 def triggered_by(author: str) -> hw.Principal:
     """The principal a review runs as: the PR's author, with their role."""
@@ -115,10 +120,18 @@ async def answer_held(harness: hw.Harness, result: hw.RunResult, *, ask: bool) -
     return result
 
 
-def lacks_credentials(result: hw.RunResult) -> bool:
-    """Whether a run failed before any model call because the provider raised a
-    TypeError, which is how the Anthropic SDK reports missing credentials."""
-    return result.error is not None and result.error.message.endswith("(TypeError)")
+def credentials_problem(result: hw.RunResult) -> str | None:
+    """What to tell the user when a run failed on credentials, which every
+    following run would fail on too; ``None`` otherwise.
+
+    The Anthropic SDK raises a TypeError when it finds no credentials, and the
+    API answers 401 to a key it doesn't accept."""
+    message = result.error.message if result.error is not None else ""
+    if message.endswith("(TypeError)"):
+        return NO_CREDENTIALS
+    if message.endswith("(HTTP 401)"):
+        return KEY_REJECTED
+    return None
 
 
 def recommends_approval(result: hw.RunResult) -> bool:
@@ -164,8 +177,9 @@ async def main(
     github.reset()
     for number in numbers or list(github.PULLS):
         reviewed = await review(harness, number, ask=ask, show_trace=show_trace)
-        if lacks_credentials(reviewed):
-            print(NO_CREDENTIALS)
+        problem = credentials_problem(reviewed)
+        if problem is not None:
+            print(problem)
             return
     print("What reached GitHub:")
     print(f"  comments:  {[(c['number'], c['body']) for c in github.COMMENTS]}")

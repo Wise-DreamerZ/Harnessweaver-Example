@@ -247,21 +247,36 @@ async def test_the_demo_approves_only_the_clean_change(capsys: pytest.CaptureFix
     assert "rejects it: the comment quotes the private deploy config" in capsys.readouterr().out
 
 
-class NoCredentials:
-    """A provider that fails the way the Anthropic SDK does with no API key."""
+class FailingProvider:
+    """A provider that fails the way anthropic.messages does on bad credentials."""
+
+    def __init__(self, error: Exception) -> None:
+        self.error = error
 
     async def generate(self, request: object, envelope: object) -> None:
-        raise TypeError("Could not resolve authentication method.")
+        raise self.error
 
 
-async def test_the_demo_stops_and_says_why_without_credentials(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("error", "says"),
+    [
+        (TypeError("Could not resolve authentication method."), "set ANTHROPIC_API_KEY"),
+        (hw.errors.ProviderError("anthropic.messages: AuthenticationError (HTTP 401)"),
+         "rejected the credentials"),
+    ],
+    ids=["no-key", "key-rejected"],
+)
+async def test_the_demo_stops_and_says_why_on_bad_credentials(
+    error: Exception,
+    says: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    harness = harness_for_test(load_spec(SPEC), model=NoCredentials())
+    harness = harness_for_test(load_spec(SPEC), model=FailingProvider(error))
     monkeypatch.setattr(main.hw, "load", lambda spec: harness)
     await main.main([101, 102])
     out = capsys.readouterr().out
-    assert "set ANTHROPIC_API_KEY" in out
+    assert says in out
     assert "#102" not in out  # it stops after the first review
     assert nothing_reached_github()
 
