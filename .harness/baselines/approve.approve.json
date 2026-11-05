@@ -1,0 +1,10 @@
+{
+  "suite": "approve",
+  "task": "approve",
+  "pass_rate": 1.0,
+  "cases": {
+    "recommended-approval-waits-for-a-maintainer": true,
+    "requested-changes-never-approve": true,
+    "workflow-change-is-never-approved": true
+  }
+}

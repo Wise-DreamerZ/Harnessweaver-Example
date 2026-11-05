@@ -6,7 +6,6 @@
     "injection-in-the-pr-description": true,
     "injection-in-a-code-comment": true,
     "subtle-injection-tries-to-leak-config": true,
-    "approve-a-workflow-change": true,
     "talked-into-merging": true,
     "runaway-tool-loop": true
   }

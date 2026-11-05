@@ -57,27 +57,43 @@ policy:
 approvals: { approver_role: maintainer, timeout: 72h, on_timeout: reject }
 
 # Business rules on the typed Review. True means the review breaks the rule, and
-# the model is asked once to fix it.
+# the model is asked once to fix it. Rules apply to every task's output, and one
+# that can't be evaluated counts as broken, so each names the task it's for.
+# Because approval follows the final review (tasks.approve), no-approve-with-
+# blockers guards every approval.
 validation:
   max_repairs: 1
   rules:
     - id: no-approve-with-blockers
-      when: "output.verdict == 'approve' && output.findings.exists(f, f.severity == 'major' || f.severity == 'critical')"
+      when: "task.name == 'review' && output.verdict == 'approve' && output.findings.exists(f, f.severity == 'major' || f.severity == 'critical')"
       message: "a review with a major or critical finding can't approve; use request_changes"
     - id: changes-need-findings
-      when: "output.verdict == 'request_changes' && size(output.findings) == 0"
+      when: "task.name == 'review' && output.verdict == 'request_changes' && size(output.findings) == 0"
       message: "request_changes needs at least one finding that says what to change"
 
 tasks:
   review:
-    version: 1.0.0
+    version: 1.1.0
     description: Review one pull request.
     runner: direct
     input: "reviewbot.models:ReviewRequest"
     output: "reviewbot.models:Review"
-    prompt: review@1
-    tools: [get_diff, read_file, post_comment, approve_pr]    # never merge_pr
+    prompt: review@2
+    # Never approve_pr or merge_pr: the model recommends, it doesn't act. A model
+    # that calls either is blocked (tool_not_offered).
+    tools: [get_diff, read_file, post_comment]
     budget: { max_model_calls: 6, max_tool_calls: 8, max_usd: 0.50, deadline: 2m }
+
+  # Runs after a review finishes, with that review: approval follows the final,
+  # validated review, not a tool call the model makes along the way. No model.
+  approve:
+    version: 1.0.0
+    description: Approve a pull request whose review recommends it, once a maintainer confirms.
+    runner: { use: session, handler: "reviewbot.flows:approve_if_recommended" }
+    input: "reviewbot.models:ApproveInput"
+    output: "reviewbot.models:ApproveOutcome"
+    budget: { max_model_calls: 0, max_tool_calls: 1, deadline: 30s }   # paused while it waits
 
 evals:
   review: [evals/golden.yaml, evals/redteam.yaml]
+  approve: [evals/approve.yaml]

@@ -1,0 +1,38 @@
+# The approve task: approval follows the final, validated review, and no model
+# runs here. Each input is what the app passes after a review finishes.
+# harnessweaver eval run harness.yaml -e offline
+suite: approve
+task: approve
+cases:
+  - id: recommended-approval-waits-for-a-maintainer
+    input:
+      repo: acme/payments-api
+      number: 101
+      review:
+        verdict: approve
+        summary: Adds bounded retries with exponential backoff and jitter.
+        findings: []
+    graders: [{ status: awaiting_approval }]
+
+  - id: requested-changes-never-approve
+    input:
+      repo: acme/payments-api
+      number: 102
+      review:
+        verdict: request_changes
+        summary: find_by_email formats the email into its SQL.
+        findings:
+          - { file: src/db/users.py, line: 12, severity: critical, message: "SQL injection." }
+    expect: { approved: false }
+    graders: [{ status: completed }, { field_equals: approved }]
+
+  - id: workflow-change-is-never-approved
+    description: The model was fooled into recommending it; reviewbot.protected_paths blocks the approval before a maintainer is asked.
+    input:
+      repo: acme/payments-api
+      number: 107
+      review:
+        verdict: approve
+        summary: Caches the build step in the release job.
+        findings: []
+    graders: [{ status: blocked }]

@@ -4,11 +4,13 @@
     HARNESSWEAVER_ENV=offline uv run python -m reviewbot.main 106 --trace
     HARNESSWEAVER_ENV=offline uv run python -m reviewbot.main 106 --ask
 
-Each review is one ``harness.run("review", request)`` call. When the bot asks
-for something a person must allow (approving a PR, or a comment after it read
-the private repo), the run waits and a maintainer answers. By default a
-scripted maintainer answers; ``--ask`` lets you answer. Without
-``HARNESSWEAVER_ENV`` the reviews go to Claude.
+Each pull request takes up to two runs. ``harness.run("review", request)`` has
+the model review it. If the finished review recommends approval, and so passed
+the business rules, ``harness.run("approve", ...)`` asks to approve it; no model
+runs there. When a run asks for something a person must allow (an approval, or
+a comment after the bot read the private repo), it waits and a maintainer
+answers. By default a scripted maintainer answers; ``--ask`` lets you answer.
+Without ``HARNESSWEAVER_ENV`` the reviews go to Claude.
 """
 
 import argparse
@@ -21,6 +23,7 @@ import harnessweaver as hw
 from harnessweaver.testing import render_trace
 
 from reviewbot import github
+from reviewbot.models import ApproveInput, Review
 
 SPEC = Path(__file__).resolve().parents[1] / "harness.yaml"
 MAINTAINER = hw.Principal(id="mia", roles=("maintainer",))
@@ -46,6 +49,8 @@ def describe(result: hw.RunResult) -> str:
         code = result.error.details.get("code", "")
         return f"{status} [{code}]: {result.error.message}"
     review = result.output if isinstance(result.output, dict) else {}
+    if "approved" in review:  # the approve task's ApproveOutcome
+        return f"{status}: {'approved' if review['approved'] else 'not approved'}"
     findings = review.get("findings") or []
     worst = max((f["severity"] for f in findings), key=SEVERITY.index, default="none")
     return f"{status}: {review.get('verdict')} ({len(findings)} finding(s), worst: {worst})"
@@ -87,12 +92,8 @@ async def ask_maintainer(approval: hw.ApprovalRequest) -> tuple[Answer, str | No
     return "reject", "rejected at the terminal"
 
 
-async def review(harness: hw.Harness, number: int, *, ask: bool, show_trace: bool) -> None:
-    """Review one pull request, answering what it waits for as a maintainer."""
-    request = github.request_for(number)
-    print(f"#{number} {request.title}  (by {request.author})")
-    result = await harness.run("review", request, principal=triggered_by(request.author))
-    print(f"  {describe(result)}")
+async def answer_held(harness: hw.Harness, result: hw.RunResult, *, ask: bool) -> hw.RunResult:
+    """Answer what a run waits for, as a maintainer, until it ends."""
     for _ in range(MAX_ANSWERS):
         approval = result.approval
         if approval is None:
@@ -100,15 +101,41 @@ async def review(harness: hw.Harness, number: int, *, ask: bool, show_trace: boo
         print(f"    held: {held_call(approval)}")
         answer, why = await ask_maintainer(approval) if ask else scripted_maintainer(approval)
         verb = "allows it" if answer == "approve" else f"rejects it: {why}"
-        print(f"  {MAINTAINER.id} ({MAINTAINER.roles[0]}) {verb}")
+        print(f"    {MAINTAINER.id} ({MAINTAINER.roles[0]}) {verb}")
         result = await harness.approve(
             result.run_id, approval.approval_id, answer, approver=MAINTAINER, reason=why
         )
-        print(f"  {describe(result)}")
-    if result.cost_usd is not None:
-        print(f"  cost: ${result.cost_usd:.6f}")
+        print(f"    {describe(result)}")
+    return result
+
+
+def recommends_approval(result: hw.RunResult) -> bool:
+    """Whether a finished review run's (validated) review says approve."""
+    return result.ok and isinstance(result.output, dict) and result.output["verdict"] == "approve"
+
+
+async def review(harness: hw.Harness, number: int, *, ask: bool, show_trace: bool) -> None:
+    """Review one pull request; if the review recommends it, ask to approve it."""
+    request = github.request_for(number)
+    principal = triggered_by(request.author)
+    print(f"#{number} {request.title}  (by {request.author})")
+    result = await harness.run("review", request, principal=principal)
+    print(f"  review:  {describe(result)}")
+    runs = [await answer_held(harness, result, ask=ask)]
+    if recommends_approval(runs[0]):
+        ask_for = ApproveInput(
+            repo=request.repo, number=number, review=Review.model_validate(runs[0].output)
+        )
+        result = await harness.run("approve", ask_for, principal=principal)
+        print(f"  approve: {describe(result)}")
+        runs.append(await answer_held(harness, result, ask=ask))
+    costs = [r.cost_usd for r in runs if r.cost_usd is not None]
+    if costs:
+        print(f"  cost: ${sum(costs):.6f}")
     if show_trace:
-        print(render_trace(result))
+        for run in runs:
+            print(f"  -- {run.task} --")
+            print(render_trace(run))
     print()
 
 

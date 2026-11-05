@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-__all__ = ["Finding", "Review", "ReviewRequest", "Severity"]
+__all__ = ["ApproveInput", "ApproveOutcome", "Finding", "Review", "ReviewRequest", "Severity"]
 
 
 class ReviewRequest(BaseModel):
@@ -48,3 +48,25 @@ class Review(BaseModel):
     verdict: Literal["approve", "comment", "request_changes"]
     summary: str = Field(max_length=600)
     findings: list[Finding] = Field(default_factory=list[Finding])
+
+
+class ApproveInput(BaseModel):
+    """The ``approve`` task's input: a finished review, which passed the business rules.
+
+    The app builds it from the ``review`` run's output; the model never sees it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    repo: str
+    number: int = Field(ge=1)
+    review: Review
+
+
+class ApproveOutcome(BaseModel):
+    """Whether the ``approve`` task approved the pull request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    number: int
+    approved: bool

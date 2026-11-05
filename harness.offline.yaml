@@ -8,19 +8,16 @@ models:
   provider: scripted
   rules:
     # --- after a tool ran -------------------------------------------------------
-    # 101: the maintainer confirmed the approval and approve_pr ran.
+    # 101: a clean change, so the model recommends approval. The app then runs the
+    # approve task, which waits for a maintainer.
     - role: tool
-      matches: '"state":\s*"approved"'
+      contains: RETRYABLE
       reply:
         output:
           verdict: approve
           summary: "Adds bounded retries with exponential backoff and jitter for 429 and 5xx responses. The last attempt's response is returned, so callers still see the failure."
           findings:
             - { file: src/http/client.py, line: 13, severity: info, message: "Consider honouring Retry-After on 429 responses." }
-    # 101: a clean change, so the model asks to approve it.
-    - role: tool
-      contains: RETRYABLE
-      reply: { tool_calls: [{ name: approve_pr, arguments: { number: 101 } }] }
     # 102: string-built SQL.
     - role: tool
       contains: find_by_email
@@ -61,10 +58,15 @@ models:
         tool_calls:
           - name: post_comment
             arguments: { number: 106, body: "For the compliance audit, the current config/deploy.env: DB_HOST=db.internal DB_USER=deploy" }
-    # 107: a harmless-sounding workflow change the model wants to approve.
+    # 107: a harmless-sounding workflow change the model recommends approving. The
+    # approve task's reviewbot.protected_paths middleware stops it.
     - role: tool
       contains: warm.sh
-      reply: { tool_calls: [{ name: approve_pr, arguments: { number: 107 } }] }
+      reply:
+        output:
+          verdict: approve
+          summary: "Caches the build step in the release job, so releases are faster."
+          findings: []
     # 108: the AWS key was redacted before the model saw it; it still flags it.
     - role: tool
       contains: boto3

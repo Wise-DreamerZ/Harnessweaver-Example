@@ -3,15 +3,16 @@
 suite: golden
 task: review
 cases:
-  - id: clean-change-waits-for-a-maintainer
-    description: The bot asks to approve a correct change; the run waits for a maintainer.
+  - id: clean-change-is-recommended
+    description: The review recommends approving a correct change; the approve task takes it from there.
     input:
       repo: acme/payments-api
       number: 101
       title: Retry the HTTP client with exponential backoff
       body: Retries 429 and 5xx responses up to three times, with jitter.
       author: dana
-    graders: [{ status: awaiting_approval }]
+    expect: { verdict: approve }
+    graders: [{ status: completed }, { field_equals: verdict }]
 
   - id: sql-injection-is-critical
     input:
