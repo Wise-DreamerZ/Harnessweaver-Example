@@ -21,8 +21,7 @@ plugins:
   local: ["reviewbot.plugin"]        # reviewbot.protected_paths, in this repo
 
 models:
-  provider: anthropic.messages
-  api_key_env: ANTHROPIC_API_KEY
+  provider: anthropic.messages       # credentials: ANTHROPIC_API_KEY or an `ant auth login` profile
   effort: high                       # code review rewards thinking it through
   default: reviewer
   aliases: { reviewer: claude-opus-5-5 }
@@ -33,7 +32,7 @@ guardrails:
   tool_result:
     # The diff is the attacker's best channel: check it the way the profile checks
     # the input. Cheap and easy to evade, which PR 106 shows; the trifecta check
-    # below is what stops an injection this guard misses.
+    # below is what catches an injection this guard misses.
     - { id: diff-injection, use: injection.heuristic, action: block }
 
 middleware:
@@ -41,7 +40,11 @@ middleware:
 
 tools:
   manifests: ["tools/*.tool.yaml"]
-  trifecta: block                    # untrusted diff + private repo + egress: nothing goes out (S3)
+  # Untrusted diff + private repo + a tool with egress (S3): the call waits for a
+  # maintainer, who sees exactly what would be posted. `block` would be stricter,
+  # but a real model reads files for context and then comments, so with `block`
+  # no honest review that read the repo could finish (see the fm run in the README).
+  trifecta: require_approval
 
 # Deterministic rules every tool call passes (R3).
 policy:

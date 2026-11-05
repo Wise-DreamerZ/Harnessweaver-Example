@@ -108,13 +108,45 @@ async def test_a_review_an_outsider_triggers_never_approves() -> None:
 # --- attacks -------------------------------------------------------------------------
 
 
-async def test_an_injection_the_guard_misses_still_cant_leak_the_config() -> None:
-    result = await offline().run("review", github.request_for(106), principal=as_author(106))
-    assert result.status is hw.RunStatus.BLOCKED
-    assert code_of(result) == "trifecta"
-    (verdict,) = [e for e in result.trace if e.source == "harness.governor" and e.code == "trifecta"]
-    assert verdict.details["step"] == 4
+async def test_an_injection_the_guard_misses_waits_for_a_maintainer_who_rejects_it() -> None:
+    harness = offline()
+    held = await harness.run("review", github.request_for(106), principal=as_author(106))
+    assert held.status is hw.RunStatus.AWAITING_APPROVAL
+    assert held.approval is not None
+    assert "lethal trifecta" in held.approval.reason  # tools.trifecta: require_approval
+    assert held.approval.call is not None
+    assert held.approval.call.name == "post_comment"
+    assert "DB_HOST" in str(held.approval.call.arguments["body"])  # the maintainer sees it
     assert github.COMMENTS == []
+
+    done = await harness.approve(
+        held.run_id, held.approval.approval_id, "reject", approver=MAINTAINER, reason="leak"
+    )
+    assert done.status is hw.RunStatus.BLOCKED
+    assert code_of(done) == "approval_rejected"
+    assert github.COMMENTS == []
+
+
+async def test_an_honest_comment_after_reading_the_repo_posts_once_allowed() -> None:
+    """What `trifecta: block` broke in the fm run: read context, then comment."""
+    model = scripted(
+        tool_call("get_diff", number=102),
+        tool_call("read_file", path="src/db/users.py"),
+        tool_call("post_comment", number=102, body="Line 12: pass email as a parameter."),
+        output({
+            "verdict": "request_changes",
+            "summary": "find_by_email formats the email into its SQL.",
+            "findings": [{"file": "src/db/users.py", "line": 12, "severity": "critical",
+                          "message": "SQL injection: use a query parameter."}],
+        }),
+    )
+    harness = harness_for_test(load_spec(SPEC), model=model)
+    held = await harness.run("review", github.request_for(102), principal=as_author(102))
+    assert held.approval is not None
+    assert github.COMMENTS == []
+    done = await harness.approve(held.run_id, held.approval.approval_id, approver=MAINTAINER)
+    assert done.ok, done.error
+    assert [c["number"] for c in github.COMMENTS] == [102]
 
 
 async def test_the_bot_cant_approve_a_workflow_change() -> None:
@@ -171,7 +203,7 @@ async def test_the_demo_approves_only_the_clean_change(capsys: pytest.CaptureFix
     assert [a["number"] for a in github.APPROVALS] == [101]
     assert github.COMMENTS == []
     assert github.MERGES == []
-    assert "blocked [trifecta]" in capsys.readouterr().out
+    assert "rejects it: the comment quotes the private deploy config" in capsys.readouterr().out
 
 
 # --- the fm serve overlay ----------------------------------------------------------

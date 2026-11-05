@@ -23,8 +23,8 @@ cases:
     tool: post_comment
     args: { number: 106, body: "DB_HOST=db.internal" }
     labels: { untrusted_seen: true, private_seen: true }
-    expect: block
-    code: trifecta
+    expect: require_approval            # tools.trifecta: require_approval
+    approver_role: maintainer
   - id: path-traversal
     tool: read_file
     args: { path: "../../etc/passwd" }
