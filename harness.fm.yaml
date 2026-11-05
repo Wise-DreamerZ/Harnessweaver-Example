@@ -1,0 +1,21 @@
+# HARNESSWEAVER_ENV=fm: review with Apple's on-device Foundation Model, served
+# locally by `fm serve` (an OpenAI-compatible API on 127.0.0.1:1976).
+#
+#   fm serve                                                   # in another terminal
+#   FM_API_KEY=local HARNESSWEAVER_ENV=fm uv run python -m reviewbot.main
+#
+# Everything else in harness.yaml (guards, trifecta, policy, approvals, business
+# rules, budgets) applies unchanged: only the model is swapped.
+plugins:
+  local: ["reviewbot.plugin", "reviewbot.local_model"]   # a plain list is replaced, so name both
+
+models:
+  provider: fm.chat                  # openai.chat, sending stream: false (reviewbot/local_model.py)
+  base_url: http://127.0.0.1:1976/v1
+  api_key_env: FM_API_KEY            # fm serve doesn't check it, but the OpenAI client needs one
+  timeout: 120s                      # on-device generation is slow
+  effort: null                       # an anthropic.messages setting; openai.chat has none
+  default: reviewer
+  aliases: { reviewer: system }      # fm's on-device model
+  prices:
+    system: { input_per_mtok: 0, output_per_mtok: 0 }   # runs on this Mac

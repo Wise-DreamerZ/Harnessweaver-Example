@@ -3,7 +3,7 @@ name = "pr-review-bot"
 version = "0.1.0"
 description = "A pull-request review bot governed by HarnessWeaver: it can't be talked into approving."
 requires-python = ">=3.12"
-dependencies = ["harnessweaver[anthropic]>=0.18,<0.19"]
+dependencies = ["harnessweaver[anthropic,openai]>=0.18,<0.19"]
 
 [dependency-groups]
 dev = ["harnessweaver-cli>=0.7.1,<0.8", "pytest>=9"]

@@ -96,7 +96,7 @@ uv run harnessweaver policy test harness.yaml --cases policy_tests.yaml   # the 
 ```
 
 ```bash
-uv run harnessweaver test .                                    # 14 offline tests
+uv run harnessweaver test .                                    # 15 offline tests
 ```
 
 The eval baselines in `.harness/baselines/` are committed. In CI, `eval run` exits 1 when a case that passed in the baseline fails.
@@ -117,6 +117,25 @@ The eval baselines in `.harness/baselines/` are committed. In CI, `eval run` exi
 | [evals/](evals) | Golden and red-team sets |
 | [policy_tests.yaml](policy_tests.yaml) | Single tool calls and the governor's verdicts |
 | [tests/](tests/test_reviewbot.py) | One test per control, each checking nothing reached GitHub |
+
+## Run it against a local model (`fm serve`)
+
+[harness.fm.yaml](harness.fm.yaml) swaps Claude for Apple's on-device Foundation Model, served by `fm serve` on `127.0.0.1:1976`. Every control in `harness.yaml` still applies; only the model changes.
+
+```bash
+fm serve
+```
+
+```bash
+FM_API_KEY=local HARNESSWEAVER_ENV=fm uv run python -m reviewbot.main
+```
+
+`fm serve` speaks the OpenAI API with three differences, so the overlay uses `fm.chat` ([reviewbot/local_model.py](reviewbot/local_model.py)), which is `openai.chat` with these changes:
+- It sends `stream: false`, because `fm` streams unless told not to and the OpenAI client leaves the field out.
+- It inlines `$ref`/`$defs`, which `fm` reports as "Undefined types".
+- It drops `title` (which `fm` reads as a named enum) and regex `pattern` (which `fm` can't handle). The governor still checks every tool call against the manifest's full schema.
+
+**What the live run showed.** Against the on-device model, every attack was stopped and nothing private reached GitHub. But no honest review finished either. The model reads files for context (often made-up paths), then wants to comment. Once a run has read the private repo, `tools.trifecta: block` stops any comment, so the whole review ends `blocked`. A model that keeps reading made-up files runs into the budget. The scripted model never read files on an honest PR, which is why the offline suite didn't surface this. Before going live, choose how to break the trifecta for legitimate reviews: for example, have comments after private reads wait for a maintainer (`trifecta: require_approval`), or take `post_comment` away from the model and post the typed review from the app.
 
 ## Going live
 

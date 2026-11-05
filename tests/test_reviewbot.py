@@ -174,6 +174,23 @@ async def test_the_demo_approves_only_the_clean_change(capsys: pytest.CaptureFix
     assert "blocked [trifecta]" in capsys.readouterr().out
 
 
+# --- the fm serve overlay ----------------------------------------------------------
+
+
+def test_the_fm_overlay_loads_and_flattens_schemas_for_fm() -> None:
+    from reviewbot.local_model import plain_schema
+    from reviewbot.models import Review
+
+    assert load_spec(SPEC, env="fm").level.level == Level.L4
+    flat = json.dumps(plain_schema(Review.model_json_schema()))
+    assert "$ref" not in flat
+    assert "$defs" not in flat
+    assert '"title"' not in flat
+    assert '"severity"' in flat  # Finding was inlined, not dropped
+    tool = {"type": "object", "properties": {"path": {"type": "string", "pattern": "^a$"}}}
+    assert plain_schema(tool) == {"type": "object", "properties": {"path": {"type": "string"}}}
+
+
 # --- the spec itself -------------------------------------------------------------
 
 
