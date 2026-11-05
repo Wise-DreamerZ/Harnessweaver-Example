@@ -108,7 +108,7 @@ uv run harnessweaver policy test harness.yaml --cases policy_tests.yaml   # the 
 ```
 
 ```bash
-uv run harnessweaver test .                                    # 19 offline tests
+uv run harnessweaver test .                                    # 20 offline tests
 ```
 
 The eval baselines in `.harness/baselines/` are committed. In CI, `eval run` exits 1 when a case that passed in the baseline fails.
@@ -174,6 +174,8 @@ uv run python -m reviewbot.main 102 106 --ask
 ```
 
 Each review costs real money, capped by the task budget (`max_usd: 0.50`). Start with a few PRs, and use `--ask` to answer each held call yourself.
+
+With no credentials, the Anthropic SDK raises a `TypeError` before any request is sent. HarnessWeaver reports it as `the model provider failed (TypeError)`, so the demo stops after the first review and says what to set. Set the key in your own terminal, not in a chat with an assistant, where it would end up in the transcript.
 
 ## Going live
 

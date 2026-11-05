@@ -34,6 +34,11 @@ SEVERITY = ["none", "info", "minor", "major", "critical"]
 
 Answer = Literal["approve", "reject"]
 
+NO_CREDENTIALS = """No model call was made: the model provider raised a TypeError.
+With Claude, that is the Anthropic SDK finding no credentials. In the shell
+you run the demo from, set ANTHROPIC_API_KEY (or run `ant auth login`), then
+try again. Don't type the key into a chat with an assistant."""
+
 
 def triggered_by(author: str) -> hw.Principal:
     """The principal a review runs as: the PR's author, with their role."""
@@ -46,8 +51,9 @@ def describe(result: hw.RunResult) -> str:
     if result.approval is not None:
         return f"{status}: {result.approval.reason} (asks a {result.approval.approver_role})"
     if result.error is not None:
-        code = result.error.details.get("code", "")
-        return f"{status} [{code}]: {result.error.message}"
+        code = result.error.details.get("code")
+        tag = f" [{code}]" if code else ""
+        return f"{status}{tag}: {result.error.message}"
     review = result.output if isinstance(result.output, dict) else {}
     if "approved" in review:  # the approve task's ApproveOutcome
         return f"{status}: {'approved' if review['approved'] else 'not approved'}"
@@ -109,13 +115,23 @@ async def answer_held(harness: hw.Harness, result: hw.RunResult, *, ask: bool) -
     return result
 
 
+def lacks_credentials(result: hw.RunResult) -> bool:
+    """Whether a run failed before any model call because the provider raised a
+    TypeError, which is how the Anthropic SDK reports missing credentials."""
+    return result.error is not None and result.error.message.endswith("(TypeError)")
+
+
 def recommends_approval(result: hw.RunResult) -> bool:
     """Whether a finished review run's (validated) review says approve."""
     return result.ok and isinstance(result.output, dict) and result.output["verdict"] == "approve"
 
 
-async def review(harness: hw.Harness, number: int, *, ask: bool, show_trace: bool) -> None:
-    """Review one pull request; if the review recommends it, ask to approve it."""
+async def review(
+    harness: hw.Harness, number: int, *, ask: bool, show_trace: bool
+) -> hw.RunResult:
+    """Review one pull request; if the review recommends it, ask to approve it.
+
+    Returns how the review run ended."""
     request = github.request_for(number)
     principal = triggered_by(request.author)
     print(f"#{number} {request.title}  (by {request.author})")
@@ -137,6 +153,7 @@ async def review(harness: hw.Harness, number: int, *, ask: bool, show_trace: boo
             print(f"  -- {run.task} --")
             print(render_trace(run))
     print()
+    return runs[0]
 
 
 async def main(
@@ -146,7 +163,10 @@ async def main(
     harness = hw.load(SPEC)
     github.reset()
     for number in numbers or list(github.PULLS):
-        await review(harness, number, ask=ask, show_trace=show_trace)
+        reviewed = await review(harness, number, ask=ask, show_trace=show_trace)
+        if lacks_credentials(reviewed):
+            print(NO_CREDENTIALS)
+            return
     print("What reached GitHub:")
     print(f"  comments:  {[(c['number'], c['body']) for c in github.COMMENTS]}")
     print(f"  approvals: {[a['number'] for a in github.APPROVALS]}")

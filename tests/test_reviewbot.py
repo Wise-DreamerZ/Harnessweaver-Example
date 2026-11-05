@@ -247,6 +247,25 @@ async def test_the_demo_approves_only_the_clean_change(capsys: pytest.CaptureFix
     assert "rejects it: the comment quotes the private deploy config" in capsys.readouterr().out
 
 
+class NoCredentials:
+    """A provider that fails the way the Anthropic SDK does with no API key."""
+
+    async def generate(self, request: object, envelope: object) -> None:
+        raise TypeError("Could not resolve authentication method.")
+
+
+async def test_the_demo_stops_and_says_why_without_credentials(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    harness = harness_for_test(load_spec(SPEC), model=NoCredentials())
+    monkeypatch.setattr(main.hw, "load", lambda spec: harness)
+    await main.main([101, 102])
+    out = capsys.readouterr().out
+    assert "set ANTHROPIC_API_KEY" in out
+    assert "#102" not in out  # it stops after the first review
+    assert nothing_reached_github()
+
+
 # --- the fm serve overlay ----------------------------------------------------------
 
 
