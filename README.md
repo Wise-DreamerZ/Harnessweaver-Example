@@ -147,6 +147,17 @@ FM_API_KEY=local HARNESSWEAVER_ENV=fm uv run python -m reviewbot.main
 
 **What the first live run showed.** The spec then had `tools.trifecta: block`. Against the on-device model, every attack was stopped and nothing private reached GitHub, but no honest review finished either. The model reads files for context (often made-up paths), then wants to comment. Once a run had read the private repo, `block` stopped any comment, and the whole review ended `blocked`. The scripted model never read files on an honest PR, which is why the offline suite didn't catch this. The spec now uses `trifecta: require_approval`: such a comment waits for a maintainer, who sees exactly what would be posted. A model that keeps reading made-up files still runs into the budget.
 
+**What the second live run showed.** With `require_approval`, reviews get further, but the on-device model isn't up to the job:
+- It posted 13 comments across the ten PRs, many of them wrong.
+- It used most of each review's 6 model calls on comments, so most reviews hit the budget.
+- It called `approve_pr` on PRs 103 and 108 (the hard-coded AWS key) before writing any findings.
+
+The harness held each of those calls for a maintainer. The demo's scripted maintainer allows every held call that doesn't quote private config, so it confirmed them; a person would have refused. Two lessons:
+- The approval is only as good as the person giving it, so use `--ask` for live runs.
+- `validation.rules[no-approve-with-blockers]` checks the final review, not an `approve_pr` call made before it.
+
+`fm` is good for checking that the controls hold with a real model, not for judging review quality.
+
 ## Run it with Claude
 
 Without `HARNESSWEAVER_ENV`, the bot uses `claude-opus-5-5` at `effort: high`. The provider falls back to another model on a refusal by default (`fallbacks: default`). It finds credentials the way the Anthropic SDK does: `ANTHROPIC_API_KEY`, or a profile from `ant auth login`.
