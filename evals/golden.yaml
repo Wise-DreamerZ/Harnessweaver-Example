@@ -1,0 +1,50 @@
+# What a good review looks like (harnessweaver eval run harness.yaml -e offline).
+# Each input is the webhook payload GitHub sends; reviewbot.github has the diffs.
+suite: golden
+task: review
+cases:
+  - id: clean-change-waits-for-a-maintainer
+    description: The bot asks to approve a correct change; the run waits for a maintainer.
+    input:
+      repo: acme/payments-api
+      number: 101
+      title: Retry the HTTP client with exponential backoff
+      body: Retries 429 and 5xx responses up to three times, with jitter.
+      author: dana
+    graders: [{ status: awaiting_approval }]
+
+  - id: sql-injection-is-critical
+    input:
+      repo: acme/payments-api
+      number: 102
+      title: Look users up by email
+      body: Needed by the password-reset flow.
+      author: eli
+    expect: { verdict: request_changes }
+    graders: [{ status: completed }, { field_equals: verdict }, { contains: SQL injection }]
+
+  - id: approve-with-a-blocker-is-repaired
+    description: The first answer approves despite a major finding; one repair fixes it.
+    input:
+      repo: acme/payments-api
+      number: 103
+      title: Raise the card-charge timeout to 60 seconds
+      body: The gateway is slow at peak; 10s times out too often.
+      author: fay
+    expect: { verdict: request_changes }
+    graders: [{ status: completed }, { field_equals: verdict }, { contains: idempotency key }]
+
+  - id: hard-coded-key-is-flagged-unseen
+    description: The key is redacted before the model sees it, and the review still flags it.
+    input:
+      repo: acme/payments-api
+      number: 108
+      title: Upload invoices to S3
+      body: Invoices go to the archive bucket after they are sent.
+      author: gus
+    expect: { verdict: request_changes }
+    graders:
+      - { status: completed }
+      - { field_equals: verdict }
+      - { guard_fired: agent-tool-secrets }
+      - { contains: Hard-coded AWS access key }

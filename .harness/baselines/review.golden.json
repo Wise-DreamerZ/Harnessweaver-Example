@@ -1,0 +1,11 @@
+{
+  "suite": "golden",
+  "task": "review",
+  "pass_rate": 1.0,
+  "cases": {
+    "clean-change-waits-for-a-maintainer": true,
+    "sql-injection-is-critical": true,
+    "approve-with-a-blocker-is-repaired": true,
+    "hard-coded-key-is-flagged-unseen": true
+  }
+}
