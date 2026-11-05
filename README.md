@@ -85,6 +85,40 @@ The sample PRs live in [reviewbot/github.py](reviewbot/github.py), a fake GitHub
 
 The layers back each other up. PR 106 gets past the cheap injection heuristic, which is expected, and the trifecta check puts what it missed in front of a person. PR 108's key is redacted on the way in, and the output guard would still block a review that quoted a secret.
 
+## Why a harness instead of a hand-written loop
+
+Without HarnessWeaver, this bot would be a loop around the Anthropic SDK's `messages.create`, plus everything that loop needs before you could trust it with a repository. Here is that code, and where each piece lives in this example instead:
+
+| The bot needs | By hand, you write | Here |
+| --- | --- | --- |
+| A tool loop that stops | Counters for model and tool calls, token-to-dollar pricing, a deadline | `budget:` on the task, four keys (PR 110) |
+| Injection screening | A check on the PR text before the model runs, and on every tool result | `profile://agent`, plus one `guardrails.tool_result` entry (PRs 104, 105) |
+| No secrets in or out | Redact every tool result; scan the final answer | `profile://agent` (PR 108) |
+| Only the right tools, with valid arguments | An allowlist per task, JSON Schema validation of each call | `tasks.<name>.tools` and the [manifests](tools) (PR 109, `policy_tests.yaml`) |
+| Role rules ("outsiders can't approve") | An `if` at every call site | One CEL rule in `policy.rules` |
+| The lethal trifecta | Track, through the loop's state, whether the run has seen untrusted and private data, then gate every tool that sends data out | `tools.trifecta: require_approval`; each manifest declares `label`, `data_access` or `egress` (PR 106) |
+| Pause for a person, then resume | Persist the run mid-loop, record the request, check the approver's role, time it out, resume exactly where it stopped | `approval:` in a manifest, `approvals:` in the spec, then `harness.approve(...)` (PR 101) |
+| A typed review that follows business rules | Parse the JSON, validate it, re-prompt with the error, cap the retries | `output:`, `validation.rules`, `max_repairs: 1` (PR 103) |
+| A rule CEL can't express | The same Python | A 38-line plugin ([reviewbot/plugin.py](reviewbot/plugin.py)) that runs in the same pipeline (PR 107) |
+| Tool definitions that can't change silently | Hash each description and schema, compare on load | `harnessweaver tools pin`; a changed tool is blocked (`digest_mismatch`) |
+| A record of every decision | Logging at every branch | `--trace` |
+| Tests without network or keys | Mocks for the SDK | The scripted model in [harness.offline.yaml](harness.offline.yaml), evals with baselines, `policy test` |
+
+What's left in the app is two `harness.run` calls, the `approve` handler ([reviewbot/flows.py](reviewbot/flows.py), 27 lines) and the tool handlers. Everything else is the 99 lines of [harness.yaml](harness.yaml), which a reviewer can read in one sitting.
+
+**What that bought during this build:**
+- **The controls hold when the model is fooled.** The offline model falls for every attack on purpose, and the red-team set still passes. A hand-written bot often leans on the prompt for safety; here, the prompt only shapes the review.
+- **Changing a decision was configuration.** The `fm` run showed that `trifecta: block` stopped every honest review. The fix was one line in `harness.yaml`, and the evals said whether anything else moved.
+- **Controls apply to every call path, not just the model's.** Taking `approve_pr` away from the model and calling it from app code took one small handler. The outsider policy, the protected-paths middleware and the maintainer approval applied to the new path unchanged, because `Session.tool` goes through the same governor. By hand, each new call site is one more place to remember every check.
+- **Swapping the model is an overlay.** Claude, the on-device `fm` model and the scripted model all run the same spec. `fm`'s API quirks took a 101-line provider plugin; nothing else changed.
+- **The spec can be checked before anything runs.** `spec validate`, `doctor`, `hooks`, `policy test` and `eval run` all read the same file. The 21 tests, which include the 12 evals and 6 policy tests, run offline in under a second, and `eval run` fails CI when a red-team case regresses.
+
+**What it costs:**
+- **A spec to learn.** Two of its details bit during this build. Validation rules run on every task's output, so they first ran against the `approve` task as well. And in a rule, `task` is a map, so `task == 'review'` was quietly never true; it has to be `task.name == 'review'`. The spec loaded fine both times; only running the demo showed them.
+- **Less detail when a provider fails.** HarnessWeaver keeps provider error messages out of results and traces, so no prompt or output content leaks into logs. The price: a low credit balance showed up only as `BadRequestError (HTTP 400)`, and finding the cause took a script that printed the API's error body.
+- **Servers that bend the API need a provider.** `openai.chat` didn't work against `fm serve` as it was; [reviewbot/local_model.py](reviewbot/local_model.py) adapts it.
+- **A young dependency.** HarnessWeaver is at 0.x, so `pyproject.toml` pins `harnessweaver>=0.18,<0.19`. Expect spec changes between minor versions.
+
 ## Check it
 
 ```bash
