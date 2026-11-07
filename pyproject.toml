@@ -3,6 +3,8 @@ name = "pr-review-bot"
 version = "0.1.0"
 description = "A pull-request review bot governed by HarnessWeaver: it can't be talked into approving."
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = ["harnessweaver[anthropic,openai]>=0.18,<0.19"]
 
 [dependency-groups]

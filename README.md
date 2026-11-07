@@ -218,3 +218,7 @@ With no credentials, the Anthropic SDK raises a `TypeError` before any request i
 3. Approvals wait in memory by default. Use `state: { use: sqlite, path: .harness/state.db }` so a review waiting for a maintainer survives a restart. Then wire `harness.approve(run_id, approval_id, approver=...)` to a button or a `/approve` comment.
 4. After changing a tool's description or schema, review it and run `harnessweaver tools pin`. A changed but unpinned tool is blocked (`digest_mismatch`).
 5. The injection heuristic is cheap and easy to evade. Add a classifier or an LLM judge in `log_only` mode, read its shadow report from `eval run`, then promote it to `enforce`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
